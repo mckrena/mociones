@@ -1,0 +1,396 @@
+---
+title: "Results"
+author: "Mackarena Toloza"
+date: "16/10/2017"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r}
+library(pacman)
+p_load(MASS, tidyverse, haven, sjPlot, stargazer, AER, pscl, janitor, stringr)
+```
+
+Cargamos base
+
+```{r}
+base <- read_stata("base.dta")
+base
+```
+
+Creamos variable período
+```{r}
+base <- base %>%
+  mutate(periodo = case_when(
+    anio %in% c("2002", "2003", "2004", "2005") ~ "1",
+    anio %in% c("2006", "2007", "2008", "2009") ~ "2",
+    anio %in% c("2010", "2011", "2012", "2013") ~ "3"
+    ))
+```
+
+```{r}
+base$partido <- as.factor(base$partido)
+base$cod_dip <- as.factor(base$cod_dip)
+base$distrito <- as.factor(base$distrito)
+base$ciclo <- as.factor(base$ciclo)
+base$periodo <- as.factor(base$periodo)
+```
+
+Información descriptiva
+
+```{r}
+aggregate (cant_moc ~ anio, data = base, FUN = "sum")
+```
+
+```{r}
+aggregate (cant_moc ~ ciclo, data = base, FUN = "sum")
+```
+
+```{r}
+aggregate (cant_moc ~ reeleccion, data = base, FUN = "sum")
+```
+
+```{r}
+aggregate (cant_moc ~ sexo, data = base, FUN = "sum")
+```
+
+```{r}
+aggregate (cant_moc ~ oficialismo, data = base, FUN = "sum")
+```
+
+per capita
+
+```{r}
+base %>%
+  tabyl(sexo)
+
+21789 /1260 
+3761 / 208 #mociones por sexo per cápita
+
+base %>%
+  tabyl(reeleccion)
+
+9736 / 480
+6248 / 360
+4391 / 288
+2807 / 220
+1599 / 84
+769 / 36 #mociones por reelección per cápita
+
+base %>%
+  tabyl(oficialismo)
+
+13462 / 735
+12088 / 733 #mociones oficialismo per cápita
+
+```
+
+```{r}
+base %>%
+ tabyl(reeleccion)
+
+480+360+288+220+84+36
+```
+
+```{r}
+base %>%
+ tabyl(sexo)
+```
+
+Hacemos subset de la base para más adelante hacer Anexo 3
+
+```{r}
+base_subset <- subset(base, noterm_period==0)
+```
+
+```{r}
+base_subset$partido <- as.factor(base_subset$partido)
+base_subset$cod_dip <- as.factor(base_subset$cod_dip)
+base_subset$distrito <- as.factor(base_subset$distrito)
+base_subset$ciclo <- as.factor(base_subset$ciclo)
+base_subset$periodo <- as.factor(base_subset$periodo)
+```
+
+```{r}
+aggregate (cant_moc ~ cod_dip, data = base_subset, FUN = "sum")
+```
+
+Histograma de la variable dependiente
+
+```{r}
+hist(base$cant_moc,
+     col="grey40",
+     main = "",
+     xlim = c(0, 70),
+     ylim = c(0, 500),
+     xlab = "cantidad de mociones",
+     ylab = "frecuencia",
+     breaks = "fd"
+     )
+```
+
+Modelo Poisson
+
+```{r}
+modelo_poisson <- glm(cant_moc ~ ciclo + reeleccion + oficialismo + noterm_period + sexo + periodo + partido + distrito + cod_dip,
+                      family = "poisson",
+                      data   = base)
+```
+
+Stargazer
+
+```{r}
+stargazer(modelo_poisson,
+                      type    = "text",
+                      report  = "vc*p",
+                      omit    = c("cod_dip", "distrito", "partido"),
+                      note    = "Efectos fijos por legislador calculados pero no reportados, al igual que los coeficientes estimados por distrito y partidos",
+                      title   = "Modelo Poisson"
+                      )
+```
+
+Test de dispersion
+
+```{r}
+dispersiontest(modelo_poisson, trafo = 1)
+```
+
+#Hay mucha sobredispersión
+
+Negbin
+
+```{r}
+modelo_negbin <- glm.nb(cant_moc ~ ciclo + reeleccion + oficialismo + noterm_period + periodo + sexo + partido + distrito + cod_dip,
+                        data = base)
+```
+
+Sacamos R2
+
+```{r}
+pR2(modelo_negbin)[["McFadden"]]
+```
+
+Stargazer
+
+```{r}
+stargazer(modelo_negbin,
+                      type    = "text",
+                      report  = "vc*p",
+                      omit    = c("cod_dip", "distrito", "partido", "periodo"),
+                      note    = "Efectos fijos por legislador calculados pero no reportados, al igual que los coeficientes estimados por distrito, partido y período",
+                      title   = "Modelo Negbin"
+                      )
+```
+
+```{r}
+stargazer(modelo_negbin,
+                      type    = "html",
+                      out     = "modelo_negbin.html",
+                      omit    = c("cod_dip", "distrito", "partido", "periodo"),
+                      note    = "Valores p en paréntesis. Efectos fijos por legislador calculados pero no reportados, al igual que los coeficientes estimados por distrito, partido y período.",
+                      report  = "vc*p",
+                      title   = "Modelo Negbin"
+                      )
+```
+
+Stargazer con coeficientes exponenciados
+
+```{r}
+stargazer(modelo_negbin,
+                      type    = "text",
+                      report  = "vc*p",
+                      omit    = c("cod_dip", "distrito", "partido", "periodo"),
+                      coef    = list(exp(coef(modelo_negbin))),
+                      note    = "Efectos fijos por legislador calculados pero no reportados, al igual que los coeficientes estimados por distrito, partido y período",
+                      title   = "Modelo Negbin"
+                      )
+```
+
+Robustez: corremos el modelo sin la variable noterm_period, co el subset:
+
+```{r}
+modelo_negbin_noterm <- glm.nb(cant_moc ~ ciclo + reeleccion + l1_cant_moc + oficialismo + sexo + periodo + partido + distrito + cod_dip,
+                        data = base_subset)
+```
+
+Stargazer
+
+```{r}
+stargazer(modelo_negbin_noterm,
+                      type    = "text",
+                      omit    = c("cod_dip", "distrito", "partido", "periodo"),
+                      note    = "Valores p en paréntesis. Efectos fijos por legislador calculados pero no reportados, al igual que los coeficientes estimados por distrito, partido y período.",
+                      report  = "vc*p",
+                      title   = "Modelo Negbin solo con legisladores que terminan su mandato completo"
+                      )
+```
+
+```{r}
+stargazer(modelo_negbin_noterm,
+                      type    = "text",
+                      omit    = c("cod_dip", "distrito", "partido", "periodo"),
+                      coef    = list(exp(coef(modelo_negbin_noterm))),
+                      note    = "Valores p en paréntesis. Efectos fijos por legislador calculados pero no reportados, al igual que los coeficientes estimados por distrito, partido y período.",
+                      report  = "vc*p",
+                      title   = "Modelo Negbin solo con legisladores que terminan su mandato completo"
+                      )
+```
+
+```{r}
+pR2(modelo_negbin_noterm)[["McFadden"]]
+```
+
+
+Modelo zeros inflados
+
+```{r}
+modelo_zeroinfl <- zeroinfl(cant_moc ~ ciclo + reeleccion + oficialismo + sexo + partido + distrito + cod_dip,
+                            dist = c("negbin"),
+                            EM   = T,
+                            data = base)
+
+# Este modelo no corre ya que colapsa con los efectos fijos. Sin embargo, teóricamente no se justifica su uso.
+
+```
+
+Graficos
+
+ciclo y noterm_period / sexo
+
+```{r}
+sjp.glm(fit         = modelo_negbin_lag, 
+        type        = "pred", 
+        title       = "",
+        vars        = c("ciclo", "noterm_period"), 
+        facet.grid  = F, 
+        geom.colors = "Paired",
+        axis.lim    = c(0, 40),
+        geom.size   = 2,
+        show.ci     = T)
+```
+
+```{r}
+sjp.glm(fit         = modelo_negbin_lag, 
+        type        = "pred", 
+        title       = "",
+        vars        = c("ciclo", "sexo"), 
+        facet.grid  = F, 
+        geom.colors = "Paired",
+        axis.lim    = c(0, 35),
+        geom.size   = 2,
+        show.ci     = T)
+```
+
+
+Solo de la variable ciclo
+
+```{r}
+sjp.glm(modelo_negbin_lag,
+        type        = "pred",
+        show.ci     = TRUE,
+        axis.lim    = c(0,40),
+        vars        = "ciclo")
+```
+
+```{r}
+sjp.glm(fit         = modelo_negbin_lag, 
+        type        = "pred",
+        title       = "",
+        vars        = "ciclo", 
+        facet.grid  = F, 
+        geom.colors = "grey40",
+        axis.lim    = c(0, 40),
+        geom.size   = 2,
+        show.ci     = T)
+```
+
+Solo de variable periodo
+
+```{r}
+sjp.glm(modelo_negbin_lag,
+        type        = "pred",
+        show.ci     = TRUE,
+        axis.lim    = c(0,70),
+        vars        = "periodo")
+```
+
+
+Mecanismos
+
+```{r}
+base_ciclo1 <- subset(base_subset, ciclo==1)
+```
+
+
+```{r}
+aggregate (cant_moc ~ reeleccion, data = base_ciclo1, FUN = "mean")
+```
+
+```{r}
+base_ciclo1$partido <- as.factor(base_ciclo1$partido)
+base_ciclo1$cod_dip <- as.factor(base_ciclo1$cod_dip)
+base_ciclo1$distrito <- as.factor(base_ciclo1$distrito)
+base_ciclo1$periodo <- as.factor(base_ciclo1$periodo)
+```
+
+
+```{r}
+modelo_mecanismo <- glm.nb(cant_moc ~  reeleccion + oficialismo + periodo + sexo + partido + cod_dip,
+                        data = base_ciclo1)
+```
+
+```{r}
+summary(modelo_mecanismo)
+```
+
+asistencia
+
+```{r}
+base_asistencia <- read_stata("asistencia.dta")
+```
+
+```{r}
+aggregate (asist ~ campana, data = base_asistencia, FUN = "mean")
+```
+
+Lagged
+
+```{r}
+modelo_negbin_lag <- glm.nb(cant_moc ~ ciclo + l1_cant_moc + reeleccion + oficialismo + noterm_period + periodo + sexo + partido + distrito + cod_dip,
+                        data = base)
+
+summary(modelo_negbin_lag)
+```
+
+Sacamos R2
+
+```{r}
+pR2(modelo_negbin_lag)[["McFadden"]]
+```
+
+Stargazer
+
+```{r}
+stargazer(modelo_negbin_lag,
+                      type    = "text",
+                      report  = "vc*p",
+                      omit    = c("cod_dip", "distrito", "partido", "periodo"),
+                      note    = "Efectos fijos por legislador calculados pero no reportados, al igual que los coeficientes estimados por distrito, partido y período",
+                      title   = "Modelo Negbin"
+                      )
+```
+
+Stargazer incident rate
+
+```{r}
+stargazer(modelo_negbin_lag,
+                      type    = "text",
+                      omit    = c("cod_dip", "distrito", "partido", "periodo"),
+                      coef    = list(exp(coef(modelo_negbin_lag))),
+                      note    = "Valores p en paréntesis. Efectos fijos por legislador calculados pero no reportados, al igual que los coeficientes estimados por distrito, partido y período.",
+                      report  = "vc*p",
+                      title   = "Modelo Negbin"
+                      )
+```
+
